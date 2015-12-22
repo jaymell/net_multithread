@@ -132,19 +132,27 @@ if __name__ == '__main__':
 	parser.add_argument("--ping", action="store_true", help="ping specified hosts ONLY (no port check)")
 	parser.add_argument("--ports", nargs="+", help="ports to check: separated by spaces, no quotes")
 	parser.add_argument("--threads", type=int, help="number of concurrent threads")
+	parser.add_argument("--redirect", help="redirect to file")
+	parser.add_argument("--append", action="store_true", help="append to redirect file, not overwrite")
 	args = parser.parse_args()
 		
 	parsedHostList = parseHostList(args.hostList)
 	numThreads = args.threads if args.threads else NUMTHREADS
+	if args.redirect:
+		if args.append: MODE = 'a'
+		else: MODE = 'w'	
+		stdout = open(args.redirect, MODE)
+	else:
+		stdout = sys.stdout
 	if args.ports:
 		hostPortMap = []
 		for host in parsedHostList:
 			for port in args.ports:
 				# host-port tuple:
 				hostPortMap.append((host, port))
-		initialize(testOpenPort, hostPortMap, numThreads, args.verbose)
+		initialize(testOpenPort, hostPortMap, numThreads, args.verbose, stdout)
 	elif 'ping' in args:
-		initialize(pingIps, parsedHostList, numThreads, args.verbose)
+		initialize(pingIps, parsedHostList, numThreads, args.verbose, stdout)
 	else:
 		print("I can't figure out what you want me to do. Exiting")
 		sys.exit(1)	
