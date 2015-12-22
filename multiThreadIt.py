@@ -8,40 +8,57 @@ import netaddr
 import socket
 import subprocess
 
-def pingIps(host, verbose=False):
+safePrint = threading.Lock()
+
+def pingIps(dataQueue, verbose=False):
 	""" ping IPs function, 
 		needs to be extended 
 		to work in Windows also """
+	while not dataQueue.empty():
+		host = dataQueue.get()
+		command = ['/bin/ping', '-c', '1', '%s' % host]
+		devnull = open(os.devnull, 'w')
+		if verbose:
+			with safePrint:
+				print('from queue: %s' % host)
+		try:
+			subprocess.check_call(command, stdout=devnull, stderr=devnull)
+			with safePrint:
+				print('In use: %s' % host)
+		except subprocess.CalledProcessError as e:
+			with safePrint:
+				print('Unreachable: %s' % host)
+		except Exception as e:
+			with safePrint:
+				print('Unknown error: %s: %s' % (host,e))
 
-	command = ['/bin/ping', '-c', '1', '%s' % host]
-	devnull = open(os.devnull, 'w')
-	if verbose:
-		with safeprint:
-			print('from queue: %s' % host)
-	try:
-		subprocess.check_call(command, stdout=devnull, stderr=devnull)
-		return 'In use: %s' % host
-	except subprocess.CalledProcessError as e:
-		return 'Unreachable: %s' % host
-	except Exception as e:
-		return 'Unknown error: %s: %s' % (host,e)
-
-def testOpenPort(host, ports, protocol='tcp', verbose=False):
-	""" expects to be a host and list of ports -- 
-		check if port is reachable """
-	protocol = protocol.lower()
+def testOpenPort(dataQueue, verbose=False):
+	""" check if port is reachable """
+	
+	### assuming tcp for now, need to front-load protocols
+	### and command-line arg for udp
+	""""
 	if protocol == 'tcp':
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	else:
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-	try:
-		s.connect((host, port))
-	except socket.error:
-		return 'Unreachable: %s' % host
-	except Exception as e:
-		return 'Unknown error: %s: %s' % (host,e)
+	"""
+	while not dataQueue.empty():
+		host, port = dataQueue.get()
+		try:
+			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			s.connect((unicode(host), int(port)))
+		except socket.error:
+			with safePrint:
+				print('Unreachable: %s port %s' % (host, port))
+		except Exception as e:
+			with safePrint:
+				print('Unknown error: %s port %s: %s' % (host,port,e))
+		else:
+			with safePrint:
+				print('Open: %s port %s' % (host, port))
 	
-def initialize(func, dataArray, numThreads=10, *args, **kwargs):
+def initialize(func, dataArray, numThreads, verbose=False):
 	""" expects to be passed a function and an array of 
 		data that is loaded into the queue and divied out
 		to worker threads
@@ -52,18 +69,9 @@ def initialize(func, dataArray, numThreads=10, *args, **kwargs):
 	[ dataQueue.put(item) for item in dataArray ]
 
 	threads = []
-	safeprint = threading.Lock()
-
-	while not dataQueue.empty():
-		item = dataQueue.get()
-		result = func(item)
-		with safeprint:
-			print(result)
-
 	for i in range(numThreads):
-		thread = threading.Thread(target=func, args=(item, *args, **kwargs))
+		thread = threading.Thread(target=func, args=(dataQueue, verbose))
 		threads.append(thread)
-		# thread.daemon = True
 		thread.start()
 
 	for thread in threads: thread.join()
@@ -85,19 +93,30 @@ def parseHostList(rawHostList):
 	return hostList
 
 if __name__ == '__main__':
+
 	import argparse
+
+	NUMTHREADS = 10
+
 	parser = argparse.ArgumentParser(description='Multi-threaded host ping and/or port check')
 	parser.add_argument("-v", "--verbose", action="store_true", default=False, help="verbose")
 	parser.add_argument("hostList", nargs="+", help="specify IPs, subnet (in cidr), or hostnames")
 	parser.add_argument("--ping", action="store_true", help="ping specified hosts ONLY (no port check)")
 	parser.add_argument("--ports", nargs="+", help="ports to check: separated by spaces, no quotes")
+	parser.add_argument("--threads", type=int, help="number of concurrent threads")
 	args = parser.parse_args()
 		
 	parsedHostList = parseHostList(args.hostList)
+	numThreads = args.threads if args.threads else NUMTHREADS
 	if args.ports:
-		initialize(testOpenPort, parsedHostList, args.ports, args.verbose)
+		hostPortMap = []
+		for host in parsedHostList:
+			for port in args.ports:
+				# host-port tuple:
+				hostPortMap.append((host, port))
+		initialize(testOpenPort, hostPortMap, numThreads, args.verbose)
 	elif 'ping' in args:
-		initialize(pingIps, parsedHostList, args.verbose)
+		initialize(pingIps, parsedHostList, numThreads, args.verbose)
 	else:
 		print("I can't figure out what you want me to do. Exiting")
 		sys.exit(1)	
