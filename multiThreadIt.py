@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from __future__ import print_function
 import os
 import threading, Queue
 import sys
@@ -8,12 +9,28 @@ import netaddr
 import socket
 import subprocess
 
+
+# hey there, global!
 safePrint = threading.Lock()
 
-def pingIps(dataQueue, verbose=False):
+"""
+def multiWrapper(func, redirect=None, *args):
+	print('i was called')
+	while not dataQueue.empty():
+		item = dataQueue.get()
+		if redirect:
+			with open(redirect) as stdout:
+				func(item, stdout=stdout, verbose=verbose)
+		else:
+			stdout = sys.stdout
+			func(item, stdout=stdout, verbose=verbose)
+"""
+
+def pingIps(dataQueue, stdout, verbose=False):
 	""" ping IPs function, 
 		needs to be extended 
 		to work in Windows also """
+
 	while not dataQueue.empty():
 		host = dataQueue.get()
 		if 'linux' in sys.platform:
@@ -32,15 +49,15 @@ def pingIps(dataQueue, verbose=False):
 		try:
 			subprocess.check_call(command, stdout=devnull, stderr=devnull)
 			with safePrint:
-				print('In use: %s' % host)
+				print('%s UP' % host, file=stdout)
 		except subprocess.CalledProcessError as e:
 			with safePrint:
-				print('Unreachable: %s' % host)
+				print('%s DOWN' % host, file=stdout)
 		except Exception as e:
 			with safePrint:
-				print('Unknown error: %s: %s' % (host,e))
+				print('%s "ERROR: %s"' % (host,e), stdout)
 
-def testOpenPort(dataQueue, verbose=False):
+def testOpenPort(dataQueue, stdout, verbose=False):
 	""" check if port is reachable """
 	
 	### assuming tcp for now, need to front-load protocols
@@ -54,31 +71,34 @@ def testOpenPort(dataQueue, verbose=False):
 	while not dataQueue.empty():
 		host, port = dataQueue.get()
 		try:
+			socket.setdefaulttimeout(1)
 			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			s.connect((unicode(host), int(port)))
-		except socket.error:
+		except (socket.error, socket.timeout):
 			with safePrint:
-				print('Unreachable: %s port %s' % (host, port))
+				print('%s %s CLOSED' % (host, port), file=stdout)
 		except Exception as e:
 			with safePrint:
-				print('Unknown error: %s port %s: %s' % (host,port,e))
+				print('%s %s "ERROR: %s"' % (host,port,e), file=stdout)
 		else:
 			with safePrint:
-				print('Open: %s port %s' % (host, port))
-	
-def initialize(func, dataArray, numThreads, verbose=False):
+				print('%s %s OPEN' % (host, port), file=stdout)
+		finally:
+			s.close()
+
+def initialize(func, dataArray, numThreads, verbose=False, stdout=sys.stdout):
 	""" expects to be passed a function and an array of 
 		data that is loaded into the queue and divied out
 		to worker threads
 	"""	
 
-	# populate queue with data:
 	dataQueue = Queue.Queue()
+	# populate queue with data:
 	[ dataQueue.put(item) for item in dataArray ]
 
 	threads = []
 	for i in range(numThreads):
-		thread = threading.Thread(target=func, args=(dataQueue, verbose))
+		thread = threading.Thread(target=func, args=(dataQueue, stdout, verbose, ))
 		threads.append(thread)
 		thread.start()
 
