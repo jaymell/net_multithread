@@ -16,8 +16,16 @@ def pingIps(dataQueue, verbose=False):
 		to work in Windows also """
 	while not dataQueue.empty():
 		host = dataQueue.get()
-		command = ['/bin/ping', '-c', '1', '%s' % host]
-		devnull = open(os.devnull, 'w')
+		if 'linux' in sys.platform:
+			command = ['/bin/ping', '-c', '1', '%s' % host]
+			devnull = open(os.devnull, 'w')
+		elif 'win' in sys.platform:
+			command = ['c:/windows/system32/ping', '-n', '1', '%s' % host]
+			devnull = open('nul', 'w')
+		else:
+			with safePrint:
+				print("I don't know your OS -- exiting")
+				return
 		if verbose:
 			with safePrint:
 				print('from queue: %s' % host)
