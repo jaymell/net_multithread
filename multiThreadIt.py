@@ -121,6 +121,16 @@ def parseHostList(rawHostList):
 			print('Unknown exception: %s' % e)
 	return hostList
 
+def parsePortList(hostList, portList):
+	""" take an already parsed list of hosts and create unique
+		host-port tuples"""
+	hostPortMap = []
+	for host in hostList:
+		for port in portList:
+			# host-port tuple:
+			hostPortMap.append((host, port))
+	return hostPortMap
+		
 if __name__ == '__main__':
 
 	import argparse
@@ -146,11 +156,7 @@ if __name__ == '__main__':
 	else:
 		stdout = sys.stdout
 	if args.ports:
-		hostPortMap = []
-		for host in parsedHostList:
-			for port in args.ports:
-				# host-port tuple:
-				hostPortMap.append((host, port))
+		hostPortMap = parsePortList(parsedHostList, args.ports)
 		initialize(testOpenPort, hostPortMap, numThreads, args.verbose, stdout)
 	elif 'ping' in args:
 		initialize(pingIps, parsedHostList, numThreads, args.verbose, stdout)
