@@ -105,8 +105,8 @@ def initialize(func, dataArray, numThreads, verbose=False, stdout=sys.stdout):
 	for thread in threads: thread.join()
 
 def parseHostList(rawHostList):
-	""" clean up host list that may be IPs, host names,
-	or some combination of both """
+	""" clean up host LIST (should be passed as such) 
+		that may be IPs, host names, or some combination of both """
 	hostList = []
 	for item in rawHostList:
         # first, check if it can be turned into netaddr.IPNetwork object:
@@ -114,6 +114,7 @@ def parseHostList(rawHostList):
 			hostList.extend([i for i in netaddr.IPNetwork(item)])
 		# presumably, a hostname was passed rather than an IP / IP block:
 		except netaddr.core.AddrFormatError:
+			print("Error parsing %s: assuming it's a hostname" % item)
 			hostList.append(item)
 		# unknown exception:
 		except Exception as e:
