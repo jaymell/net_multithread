@@ -70,6 +70,9 @@ def testOpenPort(dataQueue, stdout, verbose=False):
 	"""
 	while not dataQueue.empty():
 		host, port = dataQueue.get()
+		if verbose:
+			with safePrint:
+				print('from queue: %s port %s' % (host, port))
 		try:
 			socket.setdefaulttimeout(1)
 			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
