@@ -55,7 +55,7 @@ def pingIps(dataQueue, stdout, verbose=False):
 				print('%s DOWN' % host, file=stdout)
 		except Exception as e:
 			with safePrint:
-				print('%s "ERROR: %s"' % (host,e), stdout)
+				print('%s "ERROR: %s"' % (host,e), file=stdout)
 
 def testOpenPort(dataQueue, stdout, verbose=False):
 	""" check if port is reachable """
