@@ -5,12 +5,13 @@ import os
 import threading, Queue
 import sys
 import netaddr
+import requests
 
 import socket
 import subprocess
 
 
-# hey there, global!
+# bad global
 safePrint = threading.Lock()
 
 """
@@ -26,10 +27,7 @@ def multiWrapper(func, redirect=None, *args):
 			func(item, stdout=stdout, verbose=verbose)
 """
 
-def pingIps(dataQueue, stdout, verbose=False):
-	""" ping IPs function, 
-		needs to be extended 
-		to work in Windows also """
+def ping_ips(dataQueue, stdout, verbose=False):
 
 	while not dataQueue.empty():
 		host = dataQueue.get()
@@ -57,7 +55,25 @@ def pingIps(dataQueue, stdout, verbose=False):
 			with safePrint:
 				print('%s "ERROR: %s"' % (host,e), file=stdout)
 
-def testOpenPort(dataQueue, stdout, verbose=False):
+def make_request(url, headers=None, allow_redirects=False):
+  r = requests.get(url, headers=headers, allow_redirects=allow_redirects)
+  return r
+
+def http_request(dataQueue, stdout, verbose=False, headers=None, allow_redirects=False):
+    while not dataQueue.empty():
+		url = dataQueue.get()
+		try:
+			r = make_request(url, headers=headers, allow_redirects=allow_redirects)	 
+		except Exception as e:
+			print("Failed to make request for %s: %s" % (url, e))
+			continue
+		with safePrint:
+			if headers == None:
+				print(url, r.status_code)
+			else:
+				print(url, r.headers)
+
+def test_port(dataQueue, stdout, verbose=False):
 	""" check if port is reachable """
 	
 	### assuming tcp for now, need to front-load protocols
@@ -107,28 +123,28 @@ def initialize(func, dataArray, numThreads, verbose=False, stdout=sys.stdout):
 
 	for thread in threads: thread.join()
 
-def parseHostList(rawHostList):
+def parse_host_list(rawHostList):
 	""" clean up host LIST (should be passed as such) 
 		that may be IPs, host names, or some combination of both """
-	hostList = []
+	host_list = []
 	for item in rawHostList:
         # first, check if it can be turned into netaddr.IPNetwork object:
 		try:
-			hostList.extend([i for i in netaddr.IPNetwork(item)])
+			host_list.extend([i for i in netaddr.IPNetwork(item)])
 		# presumably, a hostname was passed rather than an IP / IP block:
 		except netaddr.core.AddrFormatError:
-			print("Error parsing %s: assuming it's a hostname" % item)
-			hostList.append(item)
+			#print("Error parsing %s: assuming it's a hostname" % item)
+			host_list.append(item)
 		# unknown exception:
 		except Exception as e:
 			print('Unknown exception: %s' % e)
-	return hostList
+	return host_list
 
-def parsePortList(hostList, portList):
+def parsePortList(host_list, portList):
 	""" take an already parsed list of hosts and create unique
 		host-port tuples"""
 	hostPortMap = []
-	for host in hostList:
+	for host in host_list:
 		for port in portList:
 			# host-port tuple:
 			hostPortMap.append((host, port))
@@ -142,15 +158,16 @@ if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser(description='Multi-threaded host ping and/or port check')
 	parser.add_argument("-v", "--verbose", action="store_true", default=False, help="verbose")
-	parser.add_argument("hostList", nargs="+", help="specify IPs, subnet (in cidr), or hostnames")
+	parser.add_argument("host_list", nargs="+", help="specify IPs, subnet (in cidr), or hostnames")
 	parser.add_argument("--ping", action="store_true", help="ping specified hosts ONLY (no port check)")
 	parser.add_argument("--ports", nargs="+", help="ports to check: separated by spaces, no quotes")
+	parser.add_argument("--http", action="store_true", default=False, help="test http respones / see header info")
 	parser.add_argument("--threads", type=int, help="number of concurrent threads")
 	parser.add_argument("--redirect", help="redirect to file")
 	parser.add_argument("--append", action="store_true", help="append to redirect file, not overwrite")
 	args = parser.parse_args()
 		
-	parsedHostList = parseHostList(args.hostList)
+	parsed_host_list = parse_host_list(args.host_list)
 	numThreads = args.threads if args.threads else NUMTHREADS
 	if args.redirect:
 		if args.append: MODE = 'a'
@@ -158,11 +175,13 @@ if __name__ == '__main__':
 		stdout = open(args.redirect, MODE)
 	else:
 		stdout = sys.stdout
-	if args.ports:
-		hostPortMap = parsePortList(parsedHostList, args.ports)
-		initialize(testOpenPort, hostPortMap, numThreads, args.verbose, stdout)
-	elif 'ping' in args:
-		initialize(pingIps, parsedHostList, numThreads, args.verbose, stdout)
+	if args.ports is True:
+		hostPortMap = parsePortList(parsed_host_list, args.ports)
+		initialize(test_port, hostPortMap, numThreads, args.verbose, stdout)
+	elif args.ports is True:
+		initialize(ping_ips, parsed_host_list, numThreads, args.verbose, stdout)
+	elif args.http is True:
+		initialize(http_request, parsed_host_list, numThreads, args.verbose, stdout)
 	else:
 		print("I can't figure out what you want me to do. Exiting")
 		sys.exit(1)	
