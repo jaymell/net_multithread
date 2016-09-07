@@ -6,10 +6,10 @@ import threading, Queue
 import sys
 import netaddr
 import requests
-
+import fileinput
 import socket
 import subprocess
-
+import re
 
 # bad global
 safePrint = threading.Lock()
@@ -105,7 +105,7 @@ def test_port(dataQueue, stdout, verbose=False):
 		finally:
 			s.close()
 
-def initialize(func, dataArray, numThreads, verbose=False, stdout=sys.stdout):
+def initialize(func, dataArray, num_threads, verbose=False, stdout=sys.stdout):
 	""" expects to be passed a function and an array of 
 		data that is loaded into the queue and divied out
 		to worker threads
@@ -116,7 +116,7 @@ def initialize(func, dataArray, numThreads, verbose=False, stdout=sys.stdout):
 	[ dataQueue.put(item) for item in dataArray ]
 
 	threads = []
-	for i in range(numThreads):
+	for i in range(num_threads):
 		thread = threading.Thread(target=func, args=(dataQueue, stdout, verbose, ))
 		threads.append(thread)
 		thread.start()
@@ -138,17 +138,20 @@ def parse_host_list(rawHostList):
 		# unknown exception:
 		except Exception as e:
 			print('Unknown exception: %s' % e)
+
+        # strip and regex out \n and extra lines:
+        host_list = [ i.rstrip() for i in host_list if not re.match(r'^\s*$', i) ]
 	return host_list
 
-def parsePortList(host_list, portList):
+def parse_port_list(host_list, portList):
 	""" take an already parsed list of hosts and create unique
 		host-port tuples"""
-	hostPortMap = []
+	host_port_map = []
 	for host in host_list:
 		for port in portList:
 			# host-port tuple:
-			hostPortMap.append((host, port))
-	return hostPortMap
+			host_port_map.append((host, port))
+	return host_port_map
 		
 if __name__ == '__main__':
 
@@ -158,7 +161,7 @@ if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser(description='Multi-threaded host ping and/or port check')
 	parser.add_argument("-v", "--verbose", action="store_true", default=False, help="verbose")
-	parser.add_argument("host_list", nargs="+", help="specify IPs, subnet (in cidr), or hostnames")
+	parser.add_argument("host_list", nargs="*", help="specify IPs, subnet (in cidr), hostnames, or urls -- or read from stdin if none passed")
 	parser.add_argument("--ping", action="store_true", help="ping specified hosts ONLY (no port check)")
 	parser.add_argument("--ports", nargs="+", help="ports to check: separated by spaces, no quotes")
 	parser.add_argument("--http", action="store_true", default=False, help="test http respones / see header info")
@@ -167,8 +170,10 @@ if __name__ == '__main__':
 	parser.add_argument("--append", action="store_true", help="append to redirect file, not overwrite")
 	args = parser.parse_args()
 		
-	parsed_host_list = parse_host_list(args.host_list)
-	numThreads = args.threads if args.threads else NUMTHREADS
+        # read from cli else stdin --  https://gist.github.com/martinth/ed991fb8cdcac3dfadf7:
+        parsed_host_list = parse_host_list([ i for i in fileinput.input(files=args.host_list if len(args.host_list)>0 else ('-', )) ])
+
+	num_threads = args.threads if args.threads else NUMTHREADS
 	if args.redirect:
 		if args.append: MODE = 'a'
 		else: MODE = 'w'	
@@ -176,12 +181,12 @@ if __name__ == '__main__':
 	else:
 		stdout = sys.stdout
 	if args.ports is True:
-		hostPortMap = parsePortList(parsed_host_list, args.ports)
-		initialize(test_port, hostPortMap, numThreads, args.verbose, stdout)
+		host_port_map = parse_port_list(parsed_host_list, args.ports)
+		initialize(test_port, host_port_map, num_threads, args.verbose, stdout)
 	elif args.ports is True:
-		initialize(ping_ips, parsed_host_list, numThreads, args.verbose, stdout)
+		initialize(ping_ips, parsed_host_list, num_threads, args.verbose, stdout)
 	elif args.http is True:
-		initialize(http_request, parsed_host_list, numThreads, args.verbose, stdout)
+		initialize(http_request, parsed_host_list, num_threads, args.verbose, stdout)
 	else:
 		print("I can't figure out what you want me to do. Exiting")
 		sys.exit(1)	
